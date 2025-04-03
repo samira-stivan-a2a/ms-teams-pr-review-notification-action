@@ -1,0 +1,189 @@
+name: 'MS Teams PR Review Request'
+description: 'Send a GitHub pull request review request notification to Microsoft Teams'
+inputs:
+  webhook_url:
+    description: 'Microsoft Teams webhook URL'
+    required: true
+  notification_type:
+    description: 'Type of notification (review_request, custom, etc)'
+    required: false
+    default: 'review_request'
+  title:
+    description: 'Title of the pull request'
+    required: true
+  pr_number:
+    description: 'Pull request number'
+    required: true
+  pr_description:
+    description: 'Description of the pull request'
+    required: true
+  url:
+    description: 'URL to the pull request'
+    required: true
+  reviewer:
+    description: 'User requested to review the pull request'
+    required: true
+  requested_by:
+    description: 'User who requested the review'
+    required: true
+  repo_name:
+    description: 'Repository name'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Create notification script
+      shell: bash
+      run: |
+        cat > ${{ github.action_path }}/send-notification.sh << 'EOL'
+        #!/bin/bash
+
+        # Get inputs from environment variables
+        WEBHOOK_URL="$1"
+        NOTIFICATION_TYPE="$2"
+        TITLE="$3"
+        PR_NUMBER="$4"
+        PR_DESCRIPTION="$5"
+        URL="$6"
+        REVIEWER="$7"
+        REQUESTED_BY="$8"
+        REPO_NAME="$9"
+
+        # Get current date in readable format
+        CURRENT_DATE=$(date +"%B %d, %Y")
+
+        # Create JSON payload
+        # Using heredoc with variables for better readability
+        payload=$(cat << EOF
+        {
+          "type": "message",
+          "attachments": [
+            {
+              "contentType": "application/vnd.microsoft.card.adaptive",
+              "content": {
+                "type": "AdaptiveCard",
+                "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                "version": "1.5",
+                "msteams": {  
+                    "width": "Full"  
+                },  
+                "body": [
+                  {
+                    "type": "ColumnSet",
+                    "columns": [
+                      {
+                        "type": "Column",
+                        "width": "auto",
+                        "items": [
+                          {
+                            "type": "Image",
+                            "url": "https://github.githubassets.com/favicons/favicon.png",
+                            "size": "Small",
+                            "altText": "GitHub logo"
+                          }
+                        ],
+                        "verticalContentAlignment": "Center"
+                      },
+                      {
+                        "type": "Column",
+                        "width": "stretch",
+                        "items": [
+                          {
+                            "type": "TextBlock",
+                            "text": "${REPO_NAME}",
+                            "weight": "Bolder",
+                            "color": "Accent"
+                          }
+                        ],
+                        "verticalContentAlignment": "Center"
+                      },
+                      {
+                        "type": "Column",
+                        "width": "auto",
+                        "items": [
+                          {
+                            "type": "TextBlock",
+                            "text": "REVIEW REQUEST",
+                            "color": "Attention",
+                            "size": "Small",
+                            "weight": "Bolder"
+                          }
+                        ],
+                        "verticalContentAlignment": "Center"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "Container",
+                    "items": [
+                      {
+                        "type": "TextBlock",
+                        "text": "Pull Request #${PR_NUMBER}: ${TITLE}",
+                        "weight": "Bolder",
+                        "size": "Medium",
+                        "wrap": true
+                      },
+                      {
+                        "type": "TextBlock",
+                        "text": "@${REQUESTED_BY} requested a review from @${REVIEWER} on ${CURRENT_DATE}",
+                        "isSubtle": true,
+                        "size": "Small",
+                        "spacing": "Small"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "TextBlock",
+                    "text": "${PR_DESCRIPTION}",
+                    "wrap": true,
+                    "spacing": "Small"
+                  },
+                  {
+                    "type": "Container",
+                    "spacing": "Large",
+                    "items": []
+                  }
+                ],
+                "actions": [
+                  {
+                    "type": "Action.OpenUrl",
+                    "title": "Review in GitHub",
+                    "url": "${URL}"
+                  }
+                ],
+                "actionAlignment": "right"
+              }
+            }
+          ]
+        }
+        EOF
+        )
+
+        # Send the notification to Microsoft Teams
+        curl -s -H "Content-Type: application/json" -d "$payload" "$WEBHOOK_URL"
+
+        # Check if the request was successful
+        if [ $? -eq 0 ]; then
+          echo "✅ Review request notification sent successfully to Microsoft Teams"
+        else
+          echo "❌ Failed to send review request notification to Microsoft Teams"
+          exit 1
+        fi
+        EOL
+        
+        chmod +x ${{ github.action_path }}/send-notification.sh
+
+    - name: Send notification to Microsoft Teams
+      shell: bash
+      run: |
+        ${{ github.action_path }}/send-notification.sh \
+          "${{ inputs.webhook_url }}" \
+          "${{ inputs.notification_type }}" \
+          "${{ inputs.title }}" \
+          "${{ inputs.pr_number }}" \
+          "${{ inputs.pr_description }}" \
+          "${{ inputs.url }}" \
+          "${{ inputs.reviewer }}" \
+          "${{ inputs.requested_by }}" \
+          "${{ inputs.repo_name }}"
